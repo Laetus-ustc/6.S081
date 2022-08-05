@@ -658,3 +658,15 @@ procdump(void)
     printf("\n");
   }
 }
+
+int procCount(void)
+{
+  int c = 0;
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    if (p->state == RUNNING || p->state == RUNNABLE || p->state == SLEEPING) {
+      c++;
+    }
+  }
+  return c;
+}
