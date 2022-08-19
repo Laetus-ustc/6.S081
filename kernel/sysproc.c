@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "defs.h"
 
 uint64
 sys_exit(void)
@@ -80,7 +81,30 @@ sys_sleep(void)
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+  uint64 va, outaddr;
+  int pages;
+  argaddr(2, &outaddr);
+  argint(1, &pages);
+  argaddr(0, &va);
+  if (pages > 65536) {
+    panic("sys_pgaccess:too many pages.\n");
+  }
+  int mask = 0;
+  
+  uint64 vaStart = PGROUNDDOWN(va);
+
+  pte_t* pte = (pte_t*)walk(myproc()->pagetable, vaStart, 0);
+  
+  for (int i = 0; i < pages; i++)
+  {
+    if (*pte & PTE_A) {
+      mask = mask | (1L << i);
+      *pte ^= PTE_A;
+    }
+    pte++;
+  }
+  copyout(myproc()->pagetable, outaddr, (char*)&mask, sizeof(int));
+
   return 0;
 }
 #endif
