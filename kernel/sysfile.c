@@ -484,3 +484,22 @@ sys_pipe(void)
   }
   return 0;
 }
+
+int
+sys_sigalarm(void) {
+  int interval;
+  uint64 fn;
+  argint(0, &interval);
+  argaddr(1, &fn);
+  struct proc* p = myproc();
+  p->interval = interval;
+  p->alarmProgram = fn;
+  return 0;
+}
+int
+sys_sigreturn(void) {
+  struct proc* p = myproc();
+  memmove(p->trapframe, p->savedTrapframe, sizeof(struct trapframe));
+  p->resumed = 0;
+  return 0;
+}

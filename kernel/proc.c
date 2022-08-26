@@ -120,6 +120,11 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  p->tickLog = ticks;
+  p->alarmProgram = 0;
+  p->savedTrapframe = kalloc();
+  p->resumed = 0;
+
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -152,6 +157,8 @@ freeproc(struct proc *p)
 {
   if(p->trapframe)
     kfree((void*)p->trapframe);
+  if(p->savedTrapframe)
+    kfree(p->savedTrapframe);
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
@@ -164,6 +171,10 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->alarmProgram = 0;
+  p->interval = 0;
+  p->resumed = 0;
+  p->tickLog = 0;
 }
 
 // Create a user page table for a given process,

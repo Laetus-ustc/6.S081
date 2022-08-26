@@ -4,6 +4,8 @@
         "spinlock.h": "c",
         "param.h": "c",
         "date.h": "c",
-        "defs.h": "c"
+        "defs.h": "c",
+        "file.h": "c",
+        "fs.h": "c"
     }
 }
