@@ -106,3 +106,14 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
+
+struct CowNode {
+  uint64 page;
+  int refs;
+  struct CowNode* next;
+};
+
+struct CowHashMap {
+  int mod;
+  struct CowNode** startAddr;
+};

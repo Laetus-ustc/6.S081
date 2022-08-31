@@ -65,6 +65,40 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if((r_scause() == 13 || r_scause() == 15)) {
+    uint64 va = r_stval(), pa;
+    if (va >= MAXVA) {
+      exit(-1);
+    }
+    pte_t* pte = walk(p->pagetable, va, 0);
+    if (pte == 0) {
+      exit(-1);
+    }
+    if ((*pte & PTE_U) == 0 || (*pte & PTE_V) == 0) {
+      exit(-1);
+    }
+    if ((*pte >> 8) % 0x4 != 0x3) {
+      printf("ERROR:RSW error! pte:%p\n", *pte);
+      exit(1);
+    }
+    int refs = CowHashMapGet(PTE2PA(*pte));
+    if (refs > 1) {
+      CowHashMapAdd(PTE2PA(*pte), refs-1);
+      if ((pa = (uint64)kalloc()) == 0) {
+        printf("ERROR:cannot kalloc.\n");
+        exit(1);
+      }
+      memmove((void*)pa, (void*)walkaddr(p->pagetable, PGROUNDDOWN(va)), PGSIZE);
+      *pte = PA2PTE(pa) + PTE_FLAGS(*pte);
+      *pte = *pte & ~(PTE_RSW);
+      *pte = *pte | PTE_W;
+    } else if (refs == 1) {
+      *pte = *pte & ~(PTE_RSW);
+      *pte = *pte | PTE_W;
+    } else {
+      printf("ERROR:%d refs.\n", refs);
+      exit(1);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

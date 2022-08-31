@@ -226,6 +226,10 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   if(newsz < oldsz)
     return oldsz;
 
+  if(newsz - oldsz > 128*1024*1024) {
+    return 0;
+  }
+
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
@@ -302,8 +306,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
-  uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,20 +313,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
+    int refs = CowHashMapGet(pa);
+    CowHashMapAdd(pa, refs+1);
+    pte_t* npte = walk(new, i, 1);
+    *pte = *pte | PTE_RSW;
+    *pte &= ~PTE_W;
+    *npte = *pte;
   }
   return 0;
 
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -356,8 +353,33 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
-
+    pte_t* pte = walk(pagetable, va0, 0);
+    if ((*pte >> 8) % 0x4 != 0x3) {
+      memmove((void *)(pa0 + (dstva - va0)), src, n);
+    } else {
+      int refs = CowHashMapGet(PTE2PA(*pte));
+      if (refs > 1) {
+        CowHashMapAdd(PTE2PA(*pte), refs-1);
+        uint64 pa;
+        if ((pa = (uint64)kalloc()) == 0) {
+          printf("ERROR:cannot kalloc.\n");
+          exit(1);
+        }
+        memmove((void*)pa, (void*)walkaddr(pagetable, va0), PGSIZE);
+        memmove((void *)(pa + (dstva - va0)), src, n);
+        *pte = PA2PTE(pa) + PTE_FLAGS(*pte);
+        *pte = *pte & ~(PTE_RSW);
+        *pte = *pte | PTE_W;
+      } else if (refs == 1) {
+        *pte = *pte & ~(PTE_RSW);
+        *pte = *pte | PTE_W;
+        memmove((void *)(pa0 + (dstva - va0)), src, n);
+      } else {
+        printf("ERROR:%d refs.\n", refs);
+        exit(1);
+      }
+    }
+    
     len -= n;
     src += n;
     dstva = va0 + PGSIZE;

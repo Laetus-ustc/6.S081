@@ -6,6 +6,12 @@
 #include "proc.h"
 #include "defs.h"
 
+struct CowHashMap cowHashMap;
+
+struct CowNode* cowNodePage;
+
+int cowNodeI;
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -54,6 +60,20 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
   }
+
+  cowHashMap.mod = 509;
+  if((cowHashMap.startAddr = kalloc())==0) {
+    panic("ERROR:procinit cowHashMap kalloc failed.\n");
+  }
+  for (int i = 0; i < 512; i++)
+  {
+    cowHashMap.startAddr[i] = 0;
+  }
+
+  if ((cowNodePage = kalloc()) == 0) {
+    panic("ERROR:cowNodePage kalloc failed.\n");
+  }
+  cowNodeI = 0;
 }
 
 // Must be called with interrupts disabled,
@@ -652,5 +672,62 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+struct CowNode*
+CowGetNewNode() {
+  if (PGSIZE / sizeof(struct CowNode) <= cowNodeI) {
+    //printf("\x1b[31mnew page.pgs:%d;i:%d\x1b[0m\n",PGSIZE / sizeof(struct CowNode), cowNodeI);
+    if ((cowNodePage = kalloc()) == 0) {
+      panic("ERROR:cowNodePage kalloc failed\n");
+    }
+    cowNodeI = 0;
+  }
+  return &cowNodePage[cowNodeI++];
+}
+
+// 用于查找某个物理页面的引用次数
+// 参数：pa为该页面的物理地址
+// 返回：该页面的引用次数；或者1如果无法查到该页面（即默认认为没有加入到hashMap中的页面有一个引用）
+int
+CowHashMapGet(uint64 pa) {
+  uint64 page = PGROUNDDOWN(pa);
+  int index = page % cowHashMap.mod;
+  struct CowNode* nodePin = cowHashMap.startAddr[index];
+  while (nodePin)
+  {
+    if (nodePin->page == page) {
+      return nodePin->refs;
+    } else {
+      nodePin = nodePin->next;
+    }
+  }
+  return 1;
+}
+void
+CowHashMapAdd(uint64 pa, int refs) {
+  uint64 page = PGROUNDDOWN(pa);
+  int index = page % cowHashMap.mod;
+  struct CowNode* nodePin = cowHashMap.startAddr[index];
+  while (nodePin)
+  {
+    if (nodePin->page == page) {
+      nodePin->refs = refs;
+      return;
+    } else {
+      nodePin = nodePin->next;
+    }
+  }
+  nodePin = cowHashMap.startAddr[index];
+  struct CowNode* newNode = CowGetNewNode();
+  newNode->next = nodePin;
+  newNode->page = page;
+  newNode->refs = refs;
+  cowHashMap.startAddr[index] = newNode;
+  struct CowNode* testPin = cowHashMap.startAddr[index];
+  while (testPin)
+  {
+    testPin = testPin->next;
   }
 }
