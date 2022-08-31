@@ -37,11 +37,12 @@ barrier()
   pthread_mutex_lock(&countLock);
   if (++count == nthread) {
     count = 0;
+    bstate.round++;
     pthread_mutex_unlock(&countLock);
     pthread_cond_broadcast(&bstate.barrier_cond);
   } else {
+    pthread_cond_wait(&bstate.barrier_cond, &countLock);
     pthread_mutex_unlock(&countLock);
-    pthread_cond_wait(&bstate.barrier_cond, )
   }
 }
 

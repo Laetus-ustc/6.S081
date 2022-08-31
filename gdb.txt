@@ -1,0 +1,12 @@
+0x0000000000001004 in ?? ()
+=> 0x0000000000001004:	93 85 02 02	addi	a1,t0,32
+Quit
+Quit
+Quit
+Quit
+Quit
+Quit
+Quit
+Detaching from program: , process 1
+Ending remote debugging.
+[Inferior 1 (process 1) detached]
