@@ -93,7 +93,7 @@ e1000_init(uint32 *xregs)
 }
 
 int
-e1000_transmit(struct mbuf *m)
+e1000_transmit(struct mbuf *m/*保存了要发送的数据包*/)
 {
   //
   // Your code here.
@@ -102,7 +102,25 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
+  acquire(&e1000_lock);
+  int i = regs[E1000_TDT];
+  if (tx_ring[i].status != E1000_TXD_STAT_DD) {
+    return -1;
+  }
   
+  if (tx_mbufs[i] != 0) {
+    mbuffree(tx_mbufs[i]);
+  }
+
+  tx_mbufs[i] = m;
+  tx_ring[i].addr = (uint64)(m->head);
+  tx_ring[i].length = m->len;
+  tx_ring[i].cmd = 9;
+
+
+  regs[E1000_TDT] = (i+1)%TX_RING_SIZE;
+
+  release(&e1000_lock);
   return 0;
 }
 
@@ -115,8 +133,25 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
-}
+  int i = (regs[E1000_RDT]+1)%RX_RING_SIZE;
+  struct rx_desc* rxdesc = &(rx_ring[i]);
+  while (rxdesc->status & E1000_RXD_STAT_DD)
+  {
+    rx_mbufs[i]->len = rxdesc->length;
+    net_rx(rx_mbufs[i]);
+    rx_mbufs[i] = mbufalloc(0);
+    rxdesc->addr = (uint64)rx_mbufs[i]->head;
+    rxdesc->status = 0;
+    i = (i+1)%RX_RING_SIZE;
+    rxdesc = &(rx_ring[i]);
+  }
+  
+  if(i == 0)
+    i = RX_RING_SIZE;
 
+  regs[E1000_RDT] = (i-1)%RX_RING_SIZE;
+
+}
 void
 e1000_intr(void)
 {
